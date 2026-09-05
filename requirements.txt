@@ -1,3 +1,4 @@
 opencv-python
 flask
 numpy
+ultralytics

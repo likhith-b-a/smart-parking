@@ -118,25 +118,26 @@
                     // Update Text
                     const textElement = document.getElementById('occupancy-text');
                     textElement.innerText = `${data.occupied} / ${data.total}`;
-                    
+
                     // Change color of text if full
                     if(data.occupied === data.total) {
                         textElement.style.color = 'red';
                     } else {
                         textElement.style.color = '#00ff00';
                     }
-                    
-                    // Update Grid
+
+                    // Update Grid (capacity view, no fixed slot identity)
                     const grid = document.getElementById('slot-grid');
                     grid.innerHTML = ''; // Clear current grid
 
-                    data.slots.forEach((status, index) => {
+                    for (let i = 0; i < data.total; i++) {
                         const div = document.createElement('div');
-                        div.className = status === 1 ? 'slot busy' : 'slot free';
-                        div.innerText = index + 1;
-                        div.title = status === 1 ? "Occupied" : "Available";
+                        const isBusy = i < data.occupied;
+                        div.className = isBusy ? 'slot busy' : 'slot free';
+                        div.innerText = i + 1;
+                        div.title = isBusy ? "Occupied" : "Available";
                         grid.appendChild(div);
-                    });
+                    }
                 })
                 .catch(err => console.error("Error fetching status:", err));
         }
