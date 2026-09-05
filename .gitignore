@@ -1,0 +1,76 @@
+# ==========================================
+# 1. Operating System Files (System Specific)
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.lnk
+
+# ==========================================
+# 2. IDEs and Code Editors
+# ==========================================
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains (IntelliJ, WebStorm, PyCharm, etc.)
+.idea/
+
+# Developer Environment Settings
+.env
+.env.local
+.env.*.local
+*.env
+
+# ==========================================
+# 3. Logs, Caches, and Diagnostics
+# ==========================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.stylelintcache
+
+# ==========================================
+# 4. Language & Framework Specifics (Uncomment as needed)
+# ==========================================
+
+# --- Node.js / Frontend ---
+node_modules/
+/dist
+/build
+.next/
+.nuxt/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# --- Java ---
+*.class
+*.jar
+*.war
+target/
+
+# --- Compiled languages ---
+*.o
+*.obj
+*.exe
+
+# --- Large Media Files ---
+*.mp4
