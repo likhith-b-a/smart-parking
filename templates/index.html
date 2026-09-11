@@ -126,18 +126,17 @@
                         textElement.style.color = '#00ff00';
                     }
 
-                    // Update Grid (capacity view, no fixed slot identity)
+                    // Update Grid (real per-slot state from auto-generated grid)
                     const grid = document.getElementById('slot-grid');
                     grid.innerHTML = ''; // Clear current grid
 
-                    for (let i = 0; i < data.total; i++) {
+                    data.slots.forEach((status, index) => {
                         const div = document.createElement('div');
-                        const isBusy = i < data.occupied;
-                        div.className = isBusy ? 'slot busy' : 'slot free';
-                        div.innerText = i + 1;
-                        div.title = isBusy ? "Occupied" : "Available";
+                        div.className = status === 1 ? 'slot busy' : 'slot free';
+                        div.innerText = index + 1;
+                        div.title = status === 1 ? "Occupied" : "Available";
                         grid.appendChild(div);
-                    }
+                    });
                 })
                 .catch(err => console.error("Error fetching status:", err));
         }

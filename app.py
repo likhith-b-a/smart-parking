@@ -1,21 +1,56 @@
 from flask import Flask, render_template, Response, jsonify
+import json
+import os
+from collections import deque
 import cv2
-from ultralytics import YOLO
+import numpy as np
 
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
 VIDEO_PATH = 'video1.mp4'
 FIXED_WIDTH, FIXED_HEIGHT = 1280, 720
-TOTAL_SLOTS = 30          # configurable capacity of the lot
-SKIP_FRAMES = 5           # run YOLO every Nth frame, reuse result between
-VEHICLE_CLASSES = [2, 5, 7]  # COCO: car, bus, truck
-CONF_THRESHOLD = 0.4
+SLOTS_FILE = 'slots.json'
+CONFIG_FILE = 'detection_config.json'   # run tune_detection.py to create/tune
+SKIP_FRAMES = 3            # run occupancy check every Nth frame, reuse result between
 
-model = YOLO('yolov8n.pt')
+# Defaults if detection_config.json isn't present — tune_detection.py
+# will overwrite these via the trackbar UI.
+BLOCK_SIZE = 25
+OCCUPIED_RATIO = 0.18
+if os.path.exists(CONFIG_FILE):
+    with open(CONFIG_FILE) as f:
+        _cfg = json.load(f)
+    BLOCK_SIZE = _cfg['block_size']
+    OCCUPIED_RATIO = _cfg['occupied_ratio']
 
-# Global variable holding latest detection status, read by /api/status
-parking_status = {'occupied': 0, 'total': TOTAL_SLOTS, 'vehicles': []}
+# Per-slot state must agree across this many of the last inference
+# passes before the displayed state flips — smooths out single-frame
+# noise instead of flickering red/green every inference step.
+HISTORY_LEN = 5
+
+# No general object detector: slots are fixed, hand-plotted polygons
+# (see plot_slots.py). Occupancy recovered from legacy/detection.py's
+# technique — adaptive-threshold the frame to highlight texture (a
+# car's body/shadow lines vs smooth asphalt), count thresholded pixels
+# inside each slot polygon. Self-contained per frame, no empty-lot
+# reference frame needed at all (sidesteps that this lot never fully
+# clears in the footage) and no domain-mismatched detector model.
+#
+# Counted as a ratio of the slot's own pixel area, not a raw count
+# like the legacy version — this lot's lanes sit at very different
+# distances from the camera, so slot pixel size varies a lot across
+# lanes and a single raw-count threshold wouldn't transfer between them.
+with open(SLOTS_FILE) as f:
+    raw_slots = json.load(f)
+slots = [np.array(polygon, dtype=np.int32) for polygon in raw_slots]
+slot_areas = [max(cv2.contourArea(s), 1) for s in slots]
+TOTAL_SLOTS = len(slots)
+
+slot_histories = [deque(maxlen=HISTORY_LEN) for _ in slots]
+
+# Global variable holding latest occupancy status, read by /api/status
+parking_status = {'occupied': 0, 'total': TOTAL_SLOTS, 'slots': [0] * TOTAL_SLOTS}
 
 
 def generate_frames():
@@ -23,7 +58,7 @@ def generate_frames():
     cap = cv2.VideoCapture(VIDEO_PATH)
 
     frame_count = 0
-    last_result = None
+    last_slot_states = [0] * TOTAL_SLOTS
 
     while True:
         # Loop video
@@ -37,31 +72,38 @@ def generate_frames():
         frame = cv2.resize(frame, (FIXED_WIDTH, FIXED_HEIGHT))
         frame_count += 1
 
-        if last_result is None or frame_count % SKIP_FRAMES == 0:
-            results = model(frame, classes=VEHICLE_CLASSES, conf=CONF_THRESHOLD, verbose=False)
-            last_result = results[0]
+        if frame_count % SKIP_FRAMES == 0 or frame_count == 1:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            blur = cv2.GaussianBlur(gray, (3, 3), 1)
+            thresh = cv2.adaptiveThreshold(
+                blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, BLOCK_SIZE, 16
+            )
 
-            vehicles = []
-            for box in last_result.boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = [int(v) for v in box.xyxy[0]]
-                vehicles.append({
-                    'class': model.names[cls_id],
-                    'confidence': round(conf, 2),
-                    'bbox': [x1, y1, x2, y2]
-                })
+            states = []
+            for i, slot in enumerate(slots):
+                mask = np.zeros(thresh.shape, dtype=np.uint8)
+                cv2.fillPoly(mask, [slot], 255)
+                cropped = cv2.bitwise_and(thresh, thresh, mask=mask)
+                ratio = cv2.countNonZero(cropped) / slot_areas[i]
+                raw_occupied = ratio > OCCUPIED_RATIO
+                slot_histories[i].append(raw_occupied)
+                states.append(1 if sum(slot_histories[i]) > len(slot_histories[i]) / 2 else 0)
 
-            occupied = min(len(vehicles), TOTAL_SLOTS)
+            last_slot_states = states
+            occupied = sum(last_slot_states)
+
             parking_status = {
                 'occupied': occupied,
                 'total': TOTAL_SLOTS,
-                'vehicles': vehicles
+                'slots': last_slot_states,
             }
 
-        annotated = last_result.plot(img=frame)
+        # Draw slot grid overlay (green=free, red=occupied)
+        for slot_polygon, state in zip(slots, last_slot_states):
+            color = (0, 0, 255) if state else (0, 255, 0)
+            cv2.polylines(frame, [slot_polygon], True, color, 2)
 
-        ret, buffer = cv2.imencode('.jpg', annotated)
+        ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
 
         yield (b'--frame\r\n'

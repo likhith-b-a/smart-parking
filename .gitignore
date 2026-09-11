@@ -77,3 +77,6 @@ target/
 
 # --- YOLO weights (auto-downloaded) ---
 *.pt
+
+# --- Per-lot calibration intermediate (regenerate via calibrate_lot.py) ---
+lot_boundary.json
